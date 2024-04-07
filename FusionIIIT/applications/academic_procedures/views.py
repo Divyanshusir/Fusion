@@ -4082,6 +4082,8 @@ def register_backlog_course(request):
             course_slot_id = ''
             if course_slots:
                 course_slot_id = CourseSlot.objects.filter(id = course_slots[0].id).first()
+            if (sem_id.semester_no - course_slot_id.semester.semester_no)%2 != 0 :
+                return JsonResponse({'message':'Wait for Next Semester !'}, status=200)
                 # print('_____________________________________________________________________________________________' , course_id ,current_user , course_slot_id ,  sem_id)
             try:
                 if course_registration.objects.filter(course_id=course_id, student_id=current_user , semester_id  = sem_id).count() == 0:
