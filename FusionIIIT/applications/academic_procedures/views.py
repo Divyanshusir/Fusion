@@ -474,6 +474,12 @@ def academic_procedures_student(request):
         cur_spi='Sem results not available' # To be fetched from db if result uploaded
 
         backlogCourseList = []
+        auto_backlog_courses = list(SemesterMarks.objects.filter(student_id = obj , grade = 'F'))
+        auto_backlog_courses_list = []
+        for i in auto_backlog_courses:
+            if not i.curr_id.courseslots.filter(type__contains="Optional").exists():
+                auto_backlog_courses_list.append([i.curr_id.name, i.curr_id.code, i.curr_id.version, i.curr_id.credit , i.grade])
+
         backlogCourses = backlog_course.objects.select_related('course_id' , 'student_id' , 'semester_id' ).filter(student_id=obj)
         for i in backlogCourses:
             summer_course = "Yes" if i.is_summer_course else "No"
@@ -495,7 +501,7 @@ def academic_procedures_student(request):
         return render(
                           request, '../templates/academic_procedures/academic.html',
                           {'details': details,
-                           # 'calendar': calendar,
+                        #    'calendar': calendar,
                             'currently_registered': currently_registered_course,
                             'pre_registered_course' : pre_registered_courses,
                             'pre_registered_course_show' : pre_registered_course_show,
@@ -555,6 +561,7 @@ def academic_procedures_student(request):
                             'tot_d':tot_d,
                            'attendence':attendence,
                            'backlogCourseList' : backlogCourseList,
+                           'auto_backlog_courses_list' : auto_backlog_courses_list,
                            'BranchChangeForm': BranchChangeForm(),
                            'BranchFlag':branchchange_flag,
                            'assistantship_flag' : student_status,
@@ -1905,6 +1912,8 @@ def get_add_course_options(branch_courses, current_register, batch):
     for c in current_register:
         slots.append(c[0])
     for courseslot in branch_courses:
+        if courseslot.type == "Swayam":
+            continue
         max_limit = courseslot.max_registration_limit
         if courseslot not in slots:
             lis = []
@@ -2616,7 +2625,7 @@ def auto_verify_registration(request):
         sem_id = Semester.objects.get(curriculum = curr_id, semester_no = sem_no)
         with transaction.atomic():
             academicadmin = get_object_or_404(User, username = "acadadmin")
-            FinalRegistration.objects.filter(student_id = student_id, verified = False, semester_id = sem_id).delete()
+            # FinalRegistration.objects.filter(student_id = student_id, verified = False, semester_id = sem_id).delete()
             StudentRegistrationChecks.objects.filter(student_id = student_id, semester_id = sem_id).update(final_registration_flag = False)
             FeePayments.objects.filter(student_id = student_id, semester_id = sem_id).delete()
             academics_module_notif(academicadmin, student_id.id.user, 'Registration Declined - '+reject_reason)
@@ -4060,3 +4069,35 @@ def swayam_replace(request):
             return HttpResponseRedirect('/academic-procedures/main')
     else:
         return HttpResponseRedirect('/academic-procedures/main')
+    
+def register_backlog_course(request):
+    if request.method == 'POST':
+        try:
+            current_user = request.user
+            current_user = ExtraInfo.objects.all().filter(user=request.user).first()
+            current_user = Student.objects.all().filter(id=current_user.id).first()
+            sem_id = Semester.objects.filter(id = request.POST.get('semester')).first()
+            course_id = Courses.objects.get(code = request.POST.get('courseCode') , version = request.POST.get('Version'))  
+            course_slots = course_id.courseslots.all()
+            course_slot_id = ''
+            if course_slots:
+                course_slot_id = CourseSlot.objects.filter(id = course_slots[0].id).first()
+                # print('_____________________________________________________________________________________________' , course_id ,current_user , course_slot_id ,  sem_id)
+            try:
+                if course_registration.objects.filter(course_id=course_id, student_id=current_user , semester_id  = sem_id).count() == 0:
+                    p = course_registration(
+                            course_id=course_id,
+                            student_id=current_user,
+                            course_slot_id=course_slot_id,
+                            semester_id=sem_id
+                        )
+                    p.save()
+                    return JsonResponse({'message': 'Successfully Registered Backlog course' }, status=200)
+                else:
+                    return JsonResponse({'message': 'Already Registered Backlog course' }, status=200)
+            except Exception as e:
+                print(str(e))
+                return JsonResponse({'message': 'Error Registering course ' + str(e)}, status=500)
+        except Exception as e:
+            print(str(e))
+            return JsonResponse({'message': 'Adding Backlog Failed '  +str(e)}, status=500)
